@@ -1,0 +1,196 @@
+#!/bin/bash
+
+MAX_ITERATIONS=5
+
+N_INSTANCES=${1:-1}
+[ ${N_INSTANCES} -ge 1 ] || {
+    echo "error: at least one instance must be launched"
+    exit 1
+}
+
+BAREBOX_PATH=$(pwd)
+BAREBOX_SANDBOX_PATH=${BAREBOX_PATH}/barebox
+[ -x "${BAREBOX_SANDBOX_PATH}" ] || {
+    echo "error: barebox sandbox not found at: ${BAREBOX_SANDBOX_PATH}"
+    exit 1
+}
+
+RATP_BAREBOX_CLI=$(which ratp-barebox-cli)
+[ -n "${RATP_BAREBOX_CLI}" ] || {
+    echo "error: ratp-barebox-cli not found"
+    exit 1
+}
+
+stop_single()
+{
+    local id=$1
+    local file_pid_bb=/tmp/barebox-sandbox.bb.pid.${id}
+    local file_pid_ctl=/tmp/barebox-sandbox.ctl.pid.${id}
+    local fifo_ctl=/tmp/barebox-sandbox.ctl.${id}
+    local fifo_in=/tmp/barebox-sandbox.in.${id}
+    local fifo_out=/tmp/barebox-sandbox.out.${id}
+    local pid=0
+
+    echo "[barebox #${id}] stopping..."
+
+    pid="$(<${file_pid_ctl})"
+    echo "[barebox #${id}]    killing sandbox ctl... (pid ${pid})"
+    kill "${pid}" > /dev/null 2>&1
+    rm "${file_pid_ctl}"
+
+    pid="$(<${file_pid_bb})"
+    echo "[barebox #${id}]    killing sandbox... (pid ${pid})"
+    kill "${pid}" > /dev/null 2>&1
+    rm "${file_pid_bb}"
+
+    echo "[barebox #${id}]    removing fifos..."
+    rm "${fifo_ctl}"
+    rm "${fifo_in}"
+    rm "${fifo_out}"
+}
+
+stop_all()
+{
+    local i=0
+
+    while [ $i -lt ${N_INSTANCES} ]; do
+        stop_single $i
+        i=$(expr $i + 1)
+    done
+}
+
+start_single()
+{
+    local id=$1
+    local file_pid_bb=/tmp/barebox-sandbox.bb.pid.${id}
+    local file_pid_ctl=/tmp/barebox-sandbox.ctl.pid.${id}
+    local fifo_ctl=/tmp/barebox-sandbox.ctl.${id}
+    local fifo_in=/tmp/barebox-sandbox.in.${id}
+    local fifo_out=/tmp/barebox-sandbox.out.${id}
+    local pid=0
+
+    echo "[barebox #${id}] starting..."
+
+    echo "[barebox #${id}]    creating fifos..."
+    [ -p "${fifo_ctl}" ] || mkfifo "${fifo_ctl}"
+    [ -p "${fifo_in}"  ] || mkfifo "${fifo_in}"
+    [ -p "${fifo_out}" ] || mkfifo "${fifo_out}"
+
+    # We pipe a cat reading from a FIFO as stdin of the barebox command. This
+    # forces the sandbox to be alive and running as long as the cat command is
+    # running.
+    echo "[barebox #${id}]    running ctl and sandbox..."
+    ( cat "${fifo_ctl}" & echo $! >&3 ) 3>"${file_pid_ctl}" | \
+        ${BAREBOX_SANDBOX_PATH} --stdinout="${fifo_in},${fifo_out}" >/dev/null 2>&1 & echo $! >"${file_pid_bb}"
+    [ $? -eq 0 ] || {
+        echo "[barebox #${id}]    error: couldn't run barebox instance"
+        return 1
+    }
+    disown
+    echo "[barebox #${id}]    ctl running (pid $(<${file_pid_ctl}))"
+    echo "[barebox #${id}]    sandbox running (pid $(<${file_pid_bb}))"
+    return 0
+}
+
+start_all()
+{
+    local i=0
+
+    while [ $i -lt ${N_INSTANCES} ]; do
+        start_single $i
+        i=$(expr $i + 1)
+    done
+}
+
+ping_single()
+{
+    local id=$1
+    local fifo_in=/tmp/barebox-sandbox.in.${id}
+    local fifo_out=/tmp/barebox-sandbox.out.${id}
+
+    echo -n "pinging sandbox instance #${id}... "
+    ${RATP_BAREBOX_CLI} --fifo-in="${fifo_out}" --fifo-out="${fifo_in}" --ping --quiet
+    if [ $? -eq 0 ]; then
+        echo "ok"
+    else
+        echo "failed"
+    fi
+}
+
+ping_all()
+{
+    local i=0
+
+    while [ $i -lt ${N_INSTANCES} ]; do
+        ping_single $i
+        i=$(expr $i + 1)
+    done
+
+    sleep 1
+}
+
+ping()
+{
+    local count=0
+
+    while [ ${count} -lt ${MAX_ITERATIONS} ]; do
+        count=$(expr ${count} + 1)
+        echo "iteration ${count}/${MAX_ITERATIONS}... "
+        ping_all
+    done
+}
+
+fbtest_single()
+{
+    local id=$1
+    local testtype=$2
+    local fifo_in=/tmp/barebox-sandbox.in.${id}
+    local fifo_out=/tmp/barebox-sandbox.out.${id}
+
+    echo "fbtest in sandbox instance #${id}... "
+    ${RATP_BAREBOX_CLI} --fifo-in="${fifo_out}" --fifo-out="${fifo_in}" --quiet --command "fb0.enable=1"
+    ${RATP_BAREBOX_CLI} --fifo-in="${fifo_out}" --fifo-out="${fifo_in}" --quiet --command "fbconsole0.active=0"
+    ${RATP_BAREBOX_CLI} --fifo-in="${fifo_out}" --fifo-out="${fifo_in}" --quiet --command "fbtest -p ${testtype}"
+}
+
+fbtest_all()
+{
+    local testtype=$1
+    local i=0
+
+    while [ $i -lt ${N_INSTANCES} ]; do
+        fbtest_single $i $testtype
+        i=$(expr $i + 1)
+    done
+
+    sleep 1
+}
+
+fbtest()
+{
+    local count=0
+
+    while [ ${count} -lt ${MAX_ITERATIONS} ]; do
+        local testtype="bars"
+
+        count=$(expr ${count} + 1)
+        [ $((${count}%2)) -eq 0 ] && testtype="geometry"
+
+        echo "iteration ${count}/${MAX_ITERATIONS} (${testtype})... "
+        fbtest_all $testtype
+    done
+}
+
+echo "starting ${N_INSTANCES} barebox instances"
+start_all
+
+echo "pinging ${N_INSTANCES} barebox instances"
+ping
+
+echo "pinging ${N_INSTANCES} barebox instances"
+fbtest
+
+echo "stopping ${N_INSTANCES} barebox instances"
+stop_all
+
+exit 0
