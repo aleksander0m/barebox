@@ -13,8 +13,7 @@ class BBFlag(object):
 
 class BBType(object):
     console = 1
-    ping = 4
-    pong = 5
+    ping = 2
     getenv = 6
     getenv_return = 7
     fs = 8
@@ -98,20 +97,23 @@ class BBPacketConsoleIndication(BBPacket):
         return self.text
 
 
-class BBPacketPing(BBPacket):
+class BBPacketPingRequest(BBPacket):
     def __init__(self, raw=None):
-        super(BBPacketPing, self).__init__(BBType.ping, raw=raw)
+        super(BBPacketPingRequest, self).__init__(BBType.ping,
+                                                  raw=raw)
 
     def __repr__(self):
-        return "BBPacketPing()"
+        return "BBPacketPingRequest()"
 
 
-class BBPacketPong(BBPacket):
+class BBPacketPingResponse(BBPacket):
     def __init__(self, raw=None):
-        super(BBPacketPong, self).__init__(BBType.pong, raw=raw)
+        super(BBPacketPingResponse, self).__init__(BBType.ping,
+                                                   BBFlag.response,
+                                                   raw=raw)
 
     def __repr__(self):
-        return "BBPacketPong()"
+        return "BBPacketPingResponse()"
 
 
 class BBPacketGetenv(BBPacket):

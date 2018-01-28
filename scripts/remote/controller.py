@@ -32,11 +32,11 @@ def unpack(data):
         logging.debug("received: console request")
         return BBPacketConsoleRequest(raw=data)
     elif p_type == BBType.ping:
+        if p_flag & BBFlag.response:
+            logging.debug("received: pong")
+            return BBPacketPingResponse(raw=data)
         logging.debug("received: ping")
-        return BBPacketPing(raw=data)
-    elif p_type == BBType.pong:
-        logging.debug("received: pong")
-        return BBPacketPong(raw=data)
+        return BBPacketPingRequest(raw=data)
     elif p_type == BBType.getenv_return:
         logging.debug("received: getenv_return")
         return BBPacketGetenvReturn(raw=data)
@@ -92,8 +92,8 @@ class Controller(Thread):
         self.fsserver = RatpFSServer(path)
 
     def ping(self):
-        self._send(BBPacketPing())
-        r = self._expect(BBPacketPong)
+        self._send(BBPacketPingRequest())
+        r = self._expect(BBPacketPingResponse)
         logging.info("Ping: %r", r)
         if not r:
             return 1
@@ -157,7 +157,7 @@ class Controller(Thread):
         self._txq.put(BBPacketConsoleIndication(text=text))
 
     def send_async_ping(self):
-        self._txq.put(BBPacketPing())
+        self._txq.put(BBPacketPingRequest())
 
 
 def main():

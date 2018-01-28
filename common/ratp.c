@@ -32,8 +32,7 @@
 #include <fs.h>
 
 #define BB_RATP_TYPE_CONSOLE		1
-#define BB_RATP_TYPE_PING		4
-#define BB_RATP_TYPE_PONG		5
+#define BB_RATP_TYPE_PING		2
 #define BB_RATP_TYPE_GETENV		6
 #define BB_RATP_TYPE_GETENV_RETURN	7
 #define BB_RATP_TYPE_FS			8
@@ -169,7 +168,8 @@ static int ratp_bb_send_pong(struct ratp_ctx *ctx)
 	buf = xzalloc(len);
 	rbb = buf;
 
-	rbb->type = cpu_to_be16(BB_RATP_TYPE_PONG);
+	rbb->type = cpu_to_be16(BB_RATP_TYPE_PING);
+	rbb->flags = cpu_to_be16(BB_RATP_FLAG_RESPONSE);
 
 	ret = ratp_send(&ctx->ratp, buf, len);
 
@@ -231,10 +231,10 @@ static int ratp_bb_dispatch(struct ratp_ctx *ctx, const void *buf, int len)
 		pr_debug("got command: %s\n", ratp_command);
 		break;
 
-	case BB_RATP_TYPE_PONG:
-		break;
-
 	case BB_RATP_TYPE_PING:
+		if (flags & BB_RATP_FLAG_RESPONSE)
+			break;
+
 		ret = ratp_bb_send_pong(ctx);
 		break;
 
