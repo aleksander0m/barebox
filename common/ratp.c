@@ -41,6 +41,10 @@
 #define BB_RATP_TYPE_FS			8
 #define BB_RATP_TYPE_FS_RETURN		9
 
+#define BB_RATP_FLAG_NONE		0
+#define BB_RATP_FLAG_RESPONSE		(1 << 0) /* Packet is a response */
+#define BB_RATP_FLAG_INDICATION		(1 << 1) /* Packet is an indication */
+
 struct ratp_bb {
 	uint16_t type;
 	uint16_t flags;
