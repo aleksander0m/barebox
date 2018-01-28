@@ -146,26 +146,6 @@ static int ratp_bb_send_command_return(struct ratp_ctx *ctx, uint32_t errno)
 	return ret;
 }
 
-static int ratp_bb_send_pong(struct ratp_ctx *ctx)
-{
-	void *buf;
-	struct ratp_bb *rbb;
-	int len = sizeof(*rbb);
-	int ret;
-
-	buf = xzalloc(len);
-	rbb = buf;
-
-	rbb->type = cpu_to_be16(BB_RATP_TYPE_PING);
-	rbb->flags = cpu_to_be16(BB_RATP_FLAG_RESPONSE);
-
-	ret = ratp_send(&ctx->ratp, buf, len);
-
-	free(buf);
-
-	return ret;
-}
-
 static int ratp_bb_send_getenv_return(struct ratp_ctx *ctx, const char *val)
 {
 	void *buf;
@@ -412,13 +392,6 @@ static int dispatch_ratp_message(struct ratp_ctx *ctx, const void *buf, int len)
 		ratp_command = xmemdup_add_zero(&rbb->data, dlen);
 		ratp_ctx = ctx;
 		pr_debug("got command: %s\n", ratp_command);
-		break;
-
-	case BB_RATP_TYPE_PING:
-		if (flags & BB_RATP_FLAG_RESPONSE)
-			break;
-
-		ret = ratp_bb_send_pong(ctx);
 		break;
 
 	case BB_RATP_TYPE_GETENV:
