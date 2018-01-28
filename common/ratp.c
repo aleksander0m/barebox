@@ -31,20 +31,10 @@
 #include <ratp_bb.h>
 #include <fs.h>
 
-#define BB_RATP_TYPE_CONSOLE		1
-#define BB_RATP_TYPE_PING		2
-#define BB_RATP_TYPE_GETENV		3
-#define BB_RATP_TYPE_FS			4
+LIST_HEAD(ratp_command_list);
+EXPORT_SYMBOL(ratp_command_list);
 
-#define BB_RATP_FLAG_NONE		0
-#define BB_RATP_FLAG_RESPONSE		(1 << 0) /* Packet is a response */
-#define BB_RATP_FLAG_INDICATION		(1 << 1) /* Packet is an indication */
-
-struct ratp_bb {
-	uint16_t type;
-	uint16_t flags;
-	uint8_t data[];
-};
+#define for_each_ratp_command(cmd) list_for_each_entry(cmd, &ratp_command_list, list)
 
 struct ratp_bb_command_return {
 	uint32_t errno;
@@ -203,66 +193,6 @@ static int ratp_bb_send_getenv_return(struct ratp_ctx *ctx, const char *val)
 static char *ratp_command;
 static struct ratp_ctx *ratp_ctx;
 
-static int ratp_bb_dispatch(struct ratp_ctx *ctx, const void *buf, int len)
-{
-	const struct ratp_bb *rbb = buf;
-	struct ratp_bb_pkt *pkt;
-	int dlen = len - sizeof(struct ratp_bb);
-	char *varname;
-	int ret = 0;
-	uint16_t flags = be16_to_cpu(rbb->flags);
-
-	switch (be16_to_cpu(rbb->type)) {
-	case BB_RATP_TYPE_CONSOLE:
-		if (flags & BB_RATP_FLAG_RESPONSE)
-			break;
-
-		if (flags & BB_RATP_FLAG_INDICATION) {
-			kfifo_put(ctx->console_recv_fifo, rbb->data, dlen);
-			break;
-		}
-
-		if (ratp_command)
-			return 0;
-
-		ratp_command = xmemdup_add_zero(&rbb->data, dlen);
-		ratp_ctx = ctx;
-		pr_debug("got command: %s\n", ratp_command);
-		break;
-
-	case BB_RATP_TYPE_PING:
-		if (flags & BB_RATP_FLAG_RESPONSE)
-			break;
-
-		ret = ratp_bb_send_pong(ctx);
-		break;
-
-	case BB_RATP_TYPE_GETENV:
-		if (flags & BB_RATP_FLAG_RESPONSE)
-			break;
-
-		varname = xmemdup_add_zero(&rbb->data, dlen);
-		ret = ratp_bb_send_getenv_return(ctx, getenv(varname));
-		break;
-
-	case BB_RATP_TYPE_FS:
-		/* Only responses expected */
-		if (!(flags & BB_RATP_FLAG_RESPONSE))
-			break;
-
-		pkt = xzalloc(sizeof(*pkt) + dlen);
-		pkt->len = dlen;
-		memcpy(pkt->data, &rbb->data, dlen);
-		ctx->fs_rx = pkt;
-		break;
-	default:
-		printf("%s: unhandled packet type 0x%04x\n", __func__, be16_to_cpu(rbb->type));
-		break;
-	}
-
-	return ret;
-}
-
 static int ratp_console_getc(struct console_device *cdev)
 {
 	struct ratp_ctx *ctx = container_of(cdev, struct ratp_ctx, ratp_console);
@@ -374,35 +304,6 @@ static void ratp_console_unregister(struct ratp_ctx *ctx)
 	}
 }
 
-static void ratp_poller(struct poller_struct *poller)
-{
-	struct ratp_ctx *ctx = container_of(poller, struct ratp_ctx, poller);
-	int ret;
-	size_t len;
-	void *buf;
-
-	ratp_queue_console_tx(ctx);
-
-	ret = ratp_poll(&ctx->ratp);
-	if (ret == -EINTR)
-		goto out;
-	if (ratp_closed(&ctx->ratp))
-		goto out;
-
-	ret = ratp_recv(&ctx->ratp, &buf, &len);
-	if (ret < 0)
-		return;
-
-	ratp_bb_dispatch(ctx, buf, len);
-
-	free(buf);
-
-	return;
-
-out:
-	ratp_console_unregister(ctx);
-}
-
 int barebox_ratp_fs_call(struct ratp_bb_pkt *tx, struct ratp_bb_pkt **rx)
 {
 	struct ratp_ctx *ctx = ratp_ctx;
@@ -440,6 +341,156 @@ int barebox_ratp_fs_call(struct ratp_bb_pkt *tx, struct ratp_bb_pkt **rx)
 	pr_debug("%s: len %i\n", __func__, ctx->fs_rx->len);
 
 	return 0;
+}
+
+static int compare_ratp_command(struct list_head *a, struct list_head *b)
+{
+	int id_a = list_entry(a, struct ratp_command, list)->id;
+	int id_b = list_entry(b, struct ratp_command, list)->id;
+
+	return (id_a - id_b);
+}
+
+int register_ratp_command(struct ratp_command *cmd)
+{
+	debug("register ratp command %hu\n", cmd->id);
+	list_add_sort(&cmd->list, &ratp_command_list, compare_ratp_command);
+	return 0;
+}
+EXPORT_SYMBOL(register_ratp_command);
+
+struct ratp_command *find_ratp_cmd(uint16_t cmd_id)
+{
+	struct ratp_command *cmdtp;
+
+	for_each_ratp_command(cmdtp)
+		if (cmd_id == cmdtp->id)
+			return cmdtp;
+
+	return NULL;	/* not found or ambiguous command */
+}
+
+static int dispatch_ratp_message(struct ratp_ctx *ctx, const void *buf, int len)
+{
+	const struct ratp_bb *rbb = buf;
+	struct ratp_bb_pkt *pkt;
+	int dlen = len - sizeof(struct ratp_bb);
+	char *varname;
+	int ret = 0;
+	uint16_t flags;
+	uint16_t type = be16_to_cpu(rbb->type);
+	struct ratp_command *cmd;
+
+	/* See if there's a command registered to this type */
+	cmd = find_ratp_cmd(type);
+	if (cmd) {
+		struct ratp_bb *rsp = NULL;
+		int rsp_len = 0;
+
+		ret = cmd->cmd(rbb, len, &rsp, &rsp_len);
+		if (!ret)
+			ret = ratp_send(&ctx->ratp, rsp, rsp_len);
+
+		free(rsp);
+		return ret;
+	}
+
+	flags = be16_to_cpu(rbb->flags);
+	switch (type) {
+	case BB_RATP_TYPE_CONSOLE:
+		if (flags & BB_RATP_FLAG_RESPONSE)
+			break;
+
+		if (flags & BB_RATP_FLAG_INDICATION) {
+			kfifo_put(ctx->console_recv_fifo, rbb->data, dlen);
+			break;
+		}
+
+		if (ratp_command)
+			return 0;
+
+		ratp_command = xmemdup_add_zero(&rbb->data, dlen);
+		ratp_ctx = ctx;
+		pr_debug("got command: %s\n", ratp_command);
+		break;
+
+	case BB_RATP_TYPE_PING:
+		if (flags & BB_RATP_FLAG_RESPONSE)
+			break;
+
+		ret = ratp_bb_send_pong(ctx);
+		break;
+
+	case BB_RATP_TYPE_GETENV:
+		if (flags & BB_RATP_FLAG_RESPONSE)
+			break;
+
+		varname = xmemdup_add_zero(&rbb->data, dlen);
+		ret = ratp_bb_send_getenv_return(ctx, getenv(varname));
+		break;
+
+	case BB_RATP_TYPE_FS:
+		/* Only responses expected */
+		if (!(flags & BB_RATP_FLAG_RESPONSE))
+			break;
+
+		pkt = xzalloc(sizeof(*pkt) + dlen);
+		pkt->len = dlen;
+		memcpy(pkt->data, &rbb->data, dlen);
+		ctx->fs_rx = pkt;
+		break;
+	default:
+		printf("%s: unhandled packet type 0x%04x\n", __func__, be16_to_cpu(rbb->type));
+		break;
+	}
+
+	return ret;
+}
+
+extern struct ratp_command __barebox_ratp_cmd_start;
+extern struct ratp_command __barebox_ratp_cmd_end;
+
+static int init_ratp_command_list(void)
+{
+	struct ratp_command *cmdtp;
+
+	for (cmdtp = &__barebox_ratp_cmd_start;
+			cmdtp != &__barebox_ratp_cmd_end;
+			cmdtp++)
+		register_ratp_command(cmdtp);
+
+	return 0;
+}
+
+late_initcall(init_ratp_command_list);
+
+static void ratp_poller(struct poller_struct *poller)
+{
+	struct ratp_ctx *ctx = container_of(poller, struct ratp_ctx, poller);
+	int ret;
+	size_t len;
+	void *buf;
+
+	ratp_queue_console_tx(ctx);
+
+	ret = ratp_poll(&ctx->ratp);
+	if (ret == -EINTR)
+		goto out;
+	if (ratp_closed(&ctx->ratp))
+		goto out;
+
+	ret = ratp_recv(&ctx->ratp, &buf, &len);
+	if (ret < 0)
+		return;
+
+	dispatch_ratp_message(ctx, buf, len);
+
+	free(buf);
+
+	return;
+
+out:
+	ratp_console_unregister(ctx);
 }
 
 int barebox_ratp(struct console_device *cdev)
