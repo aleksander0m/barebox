@@ -19,9 +19,25 @@
 
 #include <common.h>
 #include <command.h>
+#include <ratp_bb.h>
 #include <complete.h>
 #include <getopt.h>
 #include <restart.h>
+
+static int common_reset (int shutdown_flag)
+{
+	debug("running reset %s\n", shutdown_flag ? "" : "(forced)");
+
+	if (shutdown_flag)
+		shutdown_barebox();
+
+	restart_machine();
+
+	/* Not reached */
+	return 1;
+}
+
+/* Console command */
 
 static int cmd_reset(int argc, char *argv[])
 {
@@ -39,13 +55,7 @@ static int cmd_reset(int argc, char *argv[])
 		}
 	}
 
-	if (shutdown_flag)
-		shutdown_barebox();
-
-	restart_machine();
-
-	/* Not reached */
-	return 1;
+	return common_reset (shutdown_flag);
 }
 
 BAREBOX_CMD_HELP_START(reset)
@@ -61,3 +71,27 @@ BAREBOX_CMD_START(reset)
 	BAREBOX_CMD_HELP(cmd_reset_help)
 	BAREBOX_CMD_COMPLETE(empty_complete)
 BAREBOX_CMD_END
+
+/* RATP command */
+
+struct ratp_bb_reset {
+	struct ratp_bb header;
+	uint8_t        force;
+} __attribute__((packed));
+
+static int ratp_cmd_reset(const struct ratp_bb *req, int req_len,
+			  struct ratp_bb **rsp, int *rsp_len)
+{
+	struct ratp_bb_reset *reset_req = (struct ratp_bb_reset *)req;
+
+	if (req_len < sizeof (*reset_req)) {
+		printf ("ratp reset ignored: size mismatch (%d < %zu)\n", req_len, sizeof (*reset_req));
+		return 2;
+	}
+
+	return common_reset (reset_req->force);
+}
+
+BAREBOX_RATP_CMD_START(RESET)
+	.cmd = ratp_cmd_reset
+BAREBOX_RATP_CMD_END
