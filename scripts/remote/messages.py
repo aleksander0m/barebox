@@ -12,9 +12,7 @@ class BBFlag(object):
 
 
 class BBType(object):
-    command = 1
-    command_return = 2
-    consolemsg = 3
+    console = 1
     ping = 4
     pong = 5
     getenv = 6
@@ -50,13 +48,14 @@ class BBPacket(object):
             self._pack_payload()
 
 
-class BBPacketCommand(BBPacket):
+class BBPacketConsoleRequest(BBPacket):
     def __init__(self, raw=None, cmd=None):
         self.cmd = cmd
-        super(BBPacketCommand, self).__init__(BBType.command, raw=raw)
+        super(BBPacketConsoleRequest, self).__init__(BBType.console,
+                                                     raw=raw)
 
     def __repr__(self):
-        return "BBPacketCommand(cmd=%r)" % self.cmd
+        return "BBPacketConsoleRequest(cmd=%r)" % self.cmd
 
     def _unpack_payload(self, payload):
         self.cmd = payload
@@ -65,14 +64,15 @@ class BBPacketCommand(BBPacket):
         return self.cmd
 
 
-class BBPacketCommandReturn(BBPacket):
+class BBPacketConsoleResponse(BBPacket):
     def __init__(self, raw=None, exit_code=None):
         self.exit_code = exit_code
-        super(BBPacketCommandReturn, self).__init__(BBType.command_return,
-                                                    raw=raw)
+        super(BBPacketConsoleResponse, self).__init__(BBType.console,
+                                                      BBFlag.response,
+                                                      raw=raw)
 
     def __repr__(self):
-        return "BBPacketCommandReturn(exit_code=%i)" % self.exit_code
+        return "BBPacketConsoleResponse(exit_code=%i)" % self.exit_code
 
     def _unpack_payload(self, data):
         self.exit_code, = struct.unpack("!L", data[:4])
@@ -81,13 +81,15 @@ class BBPacketCommandReturn(BBPacket):
         return struct.pack("!L", self.exit_code)
 
 
-class BBPacketConsoleMsg(BBPacket):
+class BBPacketConsoleIndication(BBPacket):
     def __init__(self, raw=None, text=None):
         self.text = text
-        super(BBPacketConsoleMsg, self).__init__(BBType.consolemsg, raw=raw)
+        super(BBPacketConsoleIndication, self).__init__(BBType.console,
+                                                        BBFlag.indication,
+                                                        raw=raw)
 
     def __repr__(self):
-        return "BBPacketConsoleMsg(text=%r)" % self.text
+        return "BBPacketConsoleIndication(text=%r)" % self.text
 
     def _unpack_payload(self, payload):
         self.text = payload

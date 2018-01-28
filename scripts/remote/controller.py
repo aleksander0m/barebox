@@ -20,17 +20,17 @@ except:
 
 
 def unpack(data):
-    p_type, = struct.unpack("!H", data[:2])
-    logging.debug("unpack: %r data=%r", p_type, repr(data))
-    if p_type == BBType.command:
-        logging.debug("received: command")
-        return BBPacketCommand(raw=data)
-    elif p_type == BBType.command_return:
-        logging.debug("received: command_return")
-        return BBPacketCommandReturn(raw=data)
-    elif p_type == BBType.consolemsg:
-        logging.debug("received: consolemsg")
-        return BBPacketConsoleMsg(raw=data)
+    p_type, p_flag = struct.unpack("!HH", data[:4])
+    logging.debug("unpack: type %r flag %r data=%r", p_type, p_flag, repr(data))
+    if p_type == BBType.console:
+        if p_flag & BBFlag.response:
+            logging.debug("received: console response")
+            return BBPacketConsoleResponse(raw=data)
+        if p_flag & BBFlag.indication:
+            logging.debug("received: console indication")
+            return BBPacketConsoleIndication(raw=data)
+        logging.debug("received: console request")
+        return BBPacketConsoleRequest(raw=data)
     elif p_type == BBType.ping:
         logging.debug("received: ping")
         return BBPacketPing(raw=data)
@@ -67,7 +67,7 @@ class Controller(Thread):
         self.conn.send(bbpkt.pack())
 
     def _handle(self, bbpkt):
-        if isinstance(bbpkt, BBPacketConsoleMsg):
+        if isinstance(bbpkt, BBPacketConsoleIndication):
             os.write(sys.stdout.fileno(), bbpkt.text)
         elif isinstance(bbpkt, BBPacketPong):
             print("pong",)
@@ -102,8 +102,8 @@ class Controller(Thread):
             return 0
 
     def command(self, cmd):
-        self._send(BBPacketCommand(cmd=cmd))
-        r = self._expect(BBPacketCommandReturn, timeout=None)
+        self._send(BBPacketConsoleRequest(cmd=cmd))
+        r = self._expect(BBPacketConsoleResponse, timeout=None)
         logging.info("Command: %r", r)
         return r.exit_code
 
@@ -123,7 +123,7 @@ class Controller(Thread):
                 pkt = self.conn.recv()
                 if pkt:
                     bbpkt = unpack(pkt)
-                    if isinstance(bbpkt, BBPacketConsoleMsg):
+                    if isinstance(bbpkt, BBPacketConsoleIndication):
                         self.rxq.put((self, bbpkt.text))
                     else:
                         self._handle(bbpkt)
@@ -154,7 +154,7 @@ class Controller(Thread):
         self._txq.put(pkt)
 
     def send_async_console(self, text):
-        self._txq.put(BBPacketConsoleMsg(text=text))
+        self._txq.put(BBPacketConsoleIndication(text=text))
 
     def send_async_ping(self):
         self._txq.put(BBPacketPing())

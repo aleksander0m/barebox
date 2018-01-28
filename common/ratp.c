@@ -31,9 +31,7 @@
 #include <ratp_bb.h>
 #include <fs.h>
 
-#define BB_RATP_TYPE_COMMAND		1
-#define BB_RATP_TYPE_COMMAND_RETURN	2
-#define BB_RATP_TYPE_CONSOLEMSG		3
+#define BB_RATP_TYPE_CONSOLE		1
 #define BB_RATP_TYPE_PING		4
 #define BB_RATP_TYPE_PONG		5
 #define BB_RATP_TYPE_GETENV		6
@@ -120,7 +118,8 @@ static void ratp_queue_console_tx(struct ratp_ctx *ctx)
 	unsigned int now, maxlen = 255 - sizeof(*rbb);
 	int ret;
 
-	rbb->type = cpu_to_be16(BB_RATP_TYPE_CONSOLEMSG);
+	rbb->type = cpu_to_be16(BB_RATP_TYPE_CONSOLE);
+	rbb->flags = cpu_to_be16(BB_RATP_FLAG_INDICATION);
 
 	while (1) {
 		now = min(maxlen, kfifo_len(ctx->console_transmit_fifo));
@@ -149,7 +148,8 @@ static int ratp_bb_send_command_return(struct ratp_ctx *ctx, uint32_t errno)
 	rbb = buf;
 	rbb_ret = buf + sizeof(*rbb);
 
-	rbb->type = cpu_to_be16(BB_RATP_TYPE_COMMAND_RETURN);
+	rbb->type = cpu_to_be16(BB_RATP_TYPE_CONSOLE);
+	rbb->flags = cpu_to_be16(BB_RATP_FLAG_RESPONSE);
 	rbb_ret->errno = cpu_to_be32(errno);
 
 	ret = ratp_send(&ctx->ratp, buf, len);
@@ -211,25 +211,27 @@ static int ratp_bb_dispatch(struct ratp_ctx *ctx, const void *buf, int len)
 	int dlen = len - sizeof(struct ratp_bb);
 	char *varname;
 	int ret = 0;
+	uint16_t flags = be16_to_cpu(rbb->flags);
 
 	switch (be16_to_cpu(rbb->type)) {
-	case BB_RATP_TYPE_COMMAND:
+	case BB_RATP_TYPE_CONSOLE:
+		if (flags & BB_RATP_FLAG_RESPONSE)
+			break;
+
+		if (flags & BB_RATP_FLAG_INDICATION) {
+			kfifo_put(ctx->console_recv_fifo, rbb->data, dlen);
+			break;
+		}
+
 		if (ratp_command)
 			return 0;
 
 		ratp_command = xmemdup_add_zero(&rbb->data, dlen);
 		ratp_ctx = ctx;
 		pr_debug("got command: %s\n", ratp_command);
-
 		break;
 
-	case BB_RATP_TYPE_COMMAND_RETURN:
 	case BB_RATP_TYPE_PONG:
-		break;
-
-	case BB_RATP_TYPE_CONSOLEMSG:
-
-		kfifo_put(ctx->console_recv_fifo, rbb->data, dlen);
 		break;
 
 	case BB_RATP_TYPE_PING:
