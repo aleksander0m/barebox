@@ -24,7 +24,6 @@
 #include <ratp.h>
 #include <command.h>
 #include <byteorder.h>
-#include <environment.h>
 #include <kfifo.h>
 #include <poller.h>
 #include <linux/sizes.h>
@@ -138,30 +137,6 @@ static int ratp_bb_send_command_return(struct ratp_ctx *ctx, uint32_t errno)
 	rbb->type = cpu_to_be16(BB_RATP_TYPE_CONSOLE);
 	rbb->flags = cpu_to_be16(BB_RATP_FLAG_RESPONSE);
 	rbb_ret->errno = cpu_to_be32(errno);
-
-	ret = ratp_send(&ctx->ratp, buf, len);
-
-	free(buf);
-
-	return ret;
-}
-
-static int ratp_bb_send_getenv_return(struct ratp_ctx *ctx, const char *val)
-{
-	void *buf;
-	struct ratp_bb *rbb;
-	int len, ret;
-
-	if (!val)
-	    val = "";
-
-	len = sizeof(*rbb) + strlen(val);
-	buf = xzalloc(len);
-	rbb = buf;
-	strcpy(rbb->data, val);
-
-	rbb->type = cpu_to_be16(BB_RATP_TYPE_GETENV);
-	rbb->flags = cpu_to_be16(BB_RATP_FLAG_RESPONSE);
 
 	ret = ratp_send(&ctx->ratp, buf, len);
 
@@ -355,7 +330,6 @@ static int dispatch_ratp_message(struct ratp_ctx *ctx, const void *buf, int len)
 	const struct ratp_bb *rbb = buf;
 	struct ratp_bb_pkt *pkt;
 	int dlen = len - sizeof(struct ratp_bb);
-	char *varname;
 	int ret = 0;
 	uint16_t flags;
 	uint16_t type = be16_to_cpu(rbb->type);
@@ -392,14 +366,6 @@ static int dispatch_ratp_message(struct ratp_ctx *ctx, const void *buf, int len)
 		ratp_command = xmemdup_add_zero(&rbb->data, dlen);
 		ratp_ctx = ctx;
 		pr_debug("got command: %s\n", ratp_command);
-		break;
-
-	case BB_RATP_TYPE_GETENV:
-		if (flags & BB_RATP_FLAG_RESPONSE)
-			break;
-
-		varname = xmemdup_add_zero(&rbb->data, dlen);
-		ret = ratp_bb_send_getenv_return(ctx, getenv(varname));
 		break;
 
 	case BB_RATP_TYPE_FS:
