@@ -14,8 +14,7 @@ class BBFlag(object):
 class BBType(object):
     console = 1
     ping = 2
-    getenv = 6
-    getenv_return = 7
+    getenv = 3
     fs = 8
     fs_return = 9
 
@@ -116,13 +115,14 @@ class BBPacketPingResponse(BBPacket):
         return "BBPacketPingResponse()"
 
 
-class BBPacketGetenv(BBPacket):
+class BBPacketGetenvRequest(BBPacket):
     def __init__(self, raw=None, varname=None):
         self.varname = varname
-        super(BBPacketGetenv, self).__init__(BBType.getenv, raw=raw)
+        super(BBPacketGetenvRequest, self).__init__(BBType.getenv,
+                                                    raw=raw)
 
     def __repr__(self):
-        return "BBPacketGetenv(varname=%r)" % self.varname
+        return "BBPacketGetenvRequest(varname=%r)" % self.varname
 
     def _unpack_payload(self, payload):
         self.varname = payload
@@ -131,14 +131,15 @@ class BBPacketGetenv(BBPacket):
         return self.varname
 
 
-class BBPacketGetenvReturn(BBPacket):
+class BBPacketGetenvResponse(BBPacket):
     def __init__(self, raw=None, text=None):
         self.text = text
-        super(BBPacketGetenvReturn, self).__init__(BBType.getenv_return,
-                                                   raw=raw)
+        super(BBPacketGetenvResponse, self).__init__(BBType.getenv,
+                                                     BBFlag.response,
+                                                     raw=raw)
 
     def __repr__(self):
-        return "BBPacketGetenvReturn(varvalue=%s)" % self.text
+        return "BBPacketGetenvResponse(varvalue=%s)" % self.text
 
     def _unpack_payload(self, payload):
         self.text = payload

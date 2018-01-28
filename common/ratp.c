@@ -33,8 +33,7 @@
 
 #define BB_RATP_TYPE_CONSOLE		1
 #define BB_RATP_TYPE_PING		2
-#define BB_RATP_TYPE_GETENV		6
-#define BB_RATP_TYPE_GETENV_RETURN	7
+#define BB_RATP_TYPE_GETENV		3
 #define BB_RATP_TYPE_FS			8
 #define BB_RATP_TYPE_FS_RETURN		9
 
@@ -192,7 +191,8 @@ static int ratp_bb_send_getenv_return(struct ratp_ctx *ctx, const char *val)
 	rbb = buf;
 	strcpy(rbb->data, val);
 
-	rbb->type = cpu_to_be16(BB_RATP_TYPE_GETENV_RETURN);
+	rbb->type = cpu_to_be16(BB_RATP_TYPE_GETENV);
+	rbb->flags = cpu_to_be16(BB_RATP_FLAG_RESPONSE);
 
 	ret = ratp_send(&ctx->ratp, buf, len);
 
@@ -239,8 +239,10 @@ static int ratp_bb_dispatch(struct ratp_ctx *ctx, const void *buf, int len)
 		break;
 
 	case BB_RATP_TYPE_GETENV:
-		varname = xmemdup_add_zero(&rbb->data, dlen);
+		if (flags & BB_RATP_FLAG_RESPONSE)
+			break;
 
+		varname = xmemdup_add_zero(&rbb->data, dlen);
 		ret = ratp_bb_send_getenv_return(ctx, getenv(varname));
 		break;
 

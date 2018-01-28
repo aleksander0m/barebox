@@ -37,9 +37,12 @@ def unpack(data):
             return BBPacketPingResponse(raw=data)
         logging.debug("received: ping")
         return BBPacketPingRequest(raw=data)
-    elif p_type == BBType.getenv_return:
-        logging.debug("received: getenv_return")
-        return BBPacketGetenvReturn(raw=data)
+    elif p_type == BBType.getenv:
+        if p_flag & BBFlag.response:
+            logging.debug("received: getenv response")
+            return BBPacketGetenvResponse(raw=data)
+        logging.debug("received: getenv")
+        return BBPacketGetenvRequest(raw=data)
     elif p_type == BBType.fs:
         logging.debug("received: fs")
         return BBPacketFS(raw=data)
@@ -108,8 +111,8 @@ class Controller(Thread):
         return r.exit_code
 
     def getenv(self, varname):
-        self._send(BBPacketGetenv(varname=varname))
-        r = self._expect(BBPacketGetenvReturn)
+        self._send(BBPacketGetenvRequest(varname=varname))
+        r = self._expect(BBPacketGetenvResponse)
         return r.text
 
     def close(self):
