@@ -34,8 +34,7 @@
 #define BB_RATP_TYPE_CONSOLE		1
 #define BB_RATP_TYPE_PING		2
 #define BB_RATP_TYPE_GETENV		3
-#define BB_RATP_TYPE_FS			8
-#define BB_RATP_TYPE_FS_RETURN		9
+#define BB_RATP_TYPE_FS			4
 
 #define BB_RATP_FLAG_NONE		0
 #define BB_RATP_FLAG_RESPONSE		(1 << 0) /* Packet is a response */
@@ -246,7 +245,11 @@ static int ratp_bb_dispatch(struct ratp_ctx *ctx, const void *buf, int len)
 		ret = ratp_bb_send_getenv_return(ctx, getenv(varname));
 		break;
 
-	case BB_RATP_TYPE_FS_RETURN:
+	case BB_RATP_TYPE_FS:
+		/* Only responses expected */
+		if (!(flags & BB_RATP_FLAG_RESPONSE))
+			break;
+
 		pkt = xzalloc(sizeof(*pkt) + dlen);
 		pkt->len = dlen;
 		memcpy(pkt->data, &rbb->data, dlen);

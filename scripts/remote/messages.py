@@ -15,8 +15,7 @@ class BBType(object):
     console = 1
     ping = 2
     getenv = 3
-    fs = 8
-    fs_return = 9
+    fs = 4
 
 
 class BBPacket(object):
@@ -148,17 +147,22 @@ class BBPacketGetenvResponse(BBPacket):
         return self.text
 
 
-class BBPacketFS(BBPacket):
+class BBPacketFsRequest(BBPacket):
     def __init__(self, raw=None, payload=None):
-        super(BBPacketFS, self).__init__(BBType.fs, payload=payload, raw=raw)
+        super(BBPacketFsRequest, self).__init__(BBType.fs,
+                                                payload=payload,
+                                                raw=raw)
 
     def __repr__(self):
-        return "BBPacketFS(payload=%r)" % self.payload
+        return "BBPacketFsRequest(payload=%r)" % self.payload
 
 
-class BBPacketFSReturn(BBPacket):
+class BBPacketFsResponse(BBPacket):
     def __init__(self, raw=None, payload=None):
-        super(BBPacketFSReturn, self).__init__(BBType.fs_return, payload=payload, raw=raw)
+        super(BBPacketFsResponse, self).__init__(BBType.fs,
+                                                 BBFlag.response,
+                                                 payload=payload,
+                                                 raw=raw)
 
     def __repr__(self):
-        return "BBPacketFSReturn(payload=%r)" % self.payload
+        return "BBPacketFsResponse(payload=%r)" % self.payload

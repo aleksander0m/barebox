@@ -44,11 +44,11 @@ def unpack(data):
         logging.debug("received: getenv")
         return BBPacketGetenvRequest(raw=data)
     elif p_type == BBType.fs:
-        logging.debug("received: fs")
-        return BBPacketFS(raw=data)
-    elif p_type == BBType.fs_return:
-        logging.debug("received: fs_return")
-        return BBPacketFSReturn(raw=data)
+        if p_flag & BBFlag.response:
+            logging.debug("received: fs response")
+            return BBPacketFsResponse(raw=data)
+        logging.debug("received: fs request")
+        return BBPacketFsRequest(raw=data)
     else:
         logging.debug("received: UNKNOWN")
         return BBPacket(raw=data)
@@ -74,7 +74,7 @@ class Controller(Thread):
             os.write(sys.stdout.fileno(), bbpkt.text)
         elif isinstance(bbpkt, BBPacketPong):
             print("pong",)
-        elif isinstance(bbpkt, BBPacketFS):
+        elif isinstance(bbpkt, BBPacketFsRequest):
             if self.fsserver != None:
                 self._send(self.fsserver.handle(bbpkt))
 

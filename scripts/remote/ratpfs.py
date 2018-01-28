@@ -9,7 +9,7 @@ import stat
 import struct
 from enum import IntEnum
 
-from .messages import BBPacketFS, BBPacketFSReturn
+from .messages import BBPacketFsRequest, BBPacketFsResponse
 
 class RatpFSType(IntEnum):
     invalid = 0
@@ -138,7 +138,7 @@ class RatpFSServer(object):
         return ""
 
     def handle(self, bbcall):
-        assert isinstance(bbcall, BBPacketFS)
+        assert isinstance(bbcall, BBPacketFsRequest)
         logging.debug("bb-call: %s", bbcall)
         fscall = RatpFSPacket(raw=bbcall.payload)
         logging.info("fs-call: %s", fscall)
@@ -184,6 +184,6 @@ class RatpFSServer(object):
             raise RatpFSError()
 
         logging.info("fs-return: %s", fsreturn)
-        bbreturn = BBPacketFSReturn(payload=fsreturn.pack())
+        bbreturn = BBPacketFsResponse(payload=fsreturn.pack())
         logging.debug("bb-return: %s", bbreturn)
         return bbreturn
