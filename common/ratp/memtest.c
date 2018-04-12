@@ -134,7 +134,7 @@ static int report_progress (const char *description,
 	msg->step_description_size = cpu_to_be16(description_len);
 	msg->step_description_offset = 0;
 	msg->progress_offset = cpu_to_be64((uint64_t)offset);
-	msg->progress_offset = cpu_to_be64((uint64_t)max_progress);
+	msg->progress_max = cpu_to_be64((uint64_t)max_progress);
 
 	if (description_len)
 		memcpy (msg->buffer, description, description_len);
