@@ -339,8 +339,8 @@ int mem_test_bus_integrity(resource_size_t _start,
 	return 0;
 }
 
-/* Only report every 4k to reduce overhead */
-#define SHOULD_REPORT_PROGRESS(offset) !(offset & (SZ_4K - 1))
+/* Only report every 2M to reduce overhead to the minimum */
+#define SHOULD_REPORT_PROGRESS(offset) !(offset & (SZ_2M - 1))
 
 int mem_test_moving_inversions(resource_size_t _start,
 			       resource_size_t _end,
