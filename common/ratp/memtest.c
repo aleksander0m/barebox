@@ -140,6 +140,8 @@ static int report_progress (const char *description,
 		memcpy (msg->buffer, description, description_len);
 
 	ratp_send(ctx->ratp, msg, sizeof(*msg) + description_len);
+	ratp_poll_sync(ctx->ratp, 100);
+
 	return 0;
 }
 
